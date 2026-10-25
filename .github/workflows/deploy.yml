@@ -13,6 +13,7 @@ env:
   AWS_REGION: eu-north-1
   ROLE_TO_ASSUME: arn:aws:iam::522400670358:role/GitHubActionsRole-NewProject
   PROJECT_NAME: new-project
+  AWS_STS_REGIONAL_ENDPOINTS: regional
 
 jobs:
   backend-lint:
@@ -106,11 +107,22 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Debug OIDC Token
+        run: |
+          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+          python3 -c "import jwt, json, sys; payload = jwt.decode(sys.argv[1], options={'verify_signature': False}); print(json.dumps(payload, indent=2))" "$TOKEN" || true
+          aws sts assume-role-with-web-identity \
+            --role-arn ${{ env.ROLE_TO_ASSUME }} \
+            --role-session-name test-session \
+            --web-identity-token "$TOKEN" \
+            --region ${{ env.AWS_REGION }} || true
+
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
 
       - name: Log in to Amazon ECR
         id: login-ecr

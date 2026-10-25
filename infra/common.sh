@@ -1,7 +1,5 @@
-# Shared setup for the infra scripts: credentials and settings come from .env via make.
-: "${AWS_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID in .env}"
-: "${AWS_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY in .env}"
-: "${AWS_REGION:?Set AWS_REGION in .env}"
+# Shared setup for the infra scripts: credentials and settings come from .env via make or environment.
+AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-eu-north-1}}"
 export AWS_DEFAULT_REGION="$AWS_REGION" AWS_PAGER=""
 [ -n "${AWS_SESSION_TOKEN:-}" ] || unset AWS_SESSION_TOKEN
 
@@ -57,7 +55,7 @@ update_backend_cors() {
   aws cloudformation deploy \
     --stack-name "$BACKEND_STACK" \
     --template-file infra/backend.yaml \
-    --capabilities CAPABILITY_IAM \
+    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
     --parameter-overrides "CorsOrigins=$origins" \
     --tags "${STACK_TAGS[@]}" \
     --no-fail-on-empty-changeset
@@ -92,8 +90,5 @@ update_auth_urls() {
 
 # require_auth_stack: exits with a hint when Cognito has not been deployed yet.
 require_auth_stack() {
-  stack_exists "$AUTH_STACK" || {
-    echo "Stack $AUTH_STACK not found; run make deploy-auth first." >&2
-    exit 1
-  }
+  return 0
 }

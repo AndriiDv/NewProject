@@ -81,15 +81,15 @@ AWS_ENV := AWS_ACCESS_KEY_ID="$(AWS_ACCESS_KEY_ID)" AWS_SECRET_ACCESS_KEY="$(AWS
 	LAMBDA_MEMORY="$(LAMBDA_MEMORY)" DOMAIN_NAME="$(DOMAIN_NAME)" HOSTED_ZONE_ID="$(HOSTED_ZONE_ID)" \
 	GOOGLE_CLIENT_ID="$(GOOGLE_CLIENT_ID)" GOOGLE_CLIENT_SECRET="$(GOOGLE_CLIENT_SECRET)"
 
-deploy: deploy-backend deploy-frontend ## Deploy the whole app to AWS (after make deploy-auth)
+deploy: deploy-backend deploy-frontend ## Deploy the whole app to AWS
 
 deploy-auth: env ## Deploy Cognito (user pool + app client), print its settings and write them to .env
 	@$(AWS_ENV) ./infra/deploy-auth.sh
 
-deploy-backend: env ## Deploy backend (Lambda) + database (Aurora Serverless) to AWS, see infra/
+deploy-backend: env ## Deploy backend (ECS Fargate behind ALB) to AWS, see infra/
 	@$(AWS_ENV) ./infra/deploy-backend.sh
 
-deploy-frontend: env ## Deploy frontend to S3 + CloudFront, wired to the Lambda URL (after deploy-backend)
+deploy-frontend: env ## Deploy frontend to S3 + CloudFront, wired to the ALB DNS URL (after deploy-backend)
 	@$(AWS_ENV) ./infra/deploy-frontend.sh
 
 add-domain: env ## Attach DOMAIN_NAME from .env to the deployed frontend

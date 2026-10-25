@@ -13,8 +13,10 @@ format: ## Format backend code with ruff
 test: ## Run backend unit/integration tests with pytest
 	uv run pytest -v
 
-build: ## Build backend docker image
-	docker build -t backend:latest .
+TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+
+build: ## Build backend docker image tagged with Git commit SHA
+	docker build -t backend:$(TAG) .
 
 deploy: ## Deploy backend to AWS ECS Fargate
 	../infra/deploy-backend.sh

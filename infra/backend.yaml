@@ -292,6 +292,9 @@ Resources:
       TaskDefinition: !Ref TaskDefinition
       LaunchType: FARGATE
       DesiredCount: 1
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 0
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
@@ -321,5 +324,8 @@ Outputs:
     Value: !Ref EcsCluster
   ServiceName:
     Value: !GetAtt EcsService.Name
+  TaskDefinitionArn:
+    Description: Task Definition ARN
+    Value: !Ref TaskDefinition
   TargetGroupArn:
     Value: !Ref TargetGroup

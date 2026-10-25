@@ -126,9 +126,8 @@ jobs:
           REPOSITORY: ${{ env.PROJECT_NAME }}-backend
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build --platform linux/amd64 -t $REGISTRY/$REPOSITORY:$IMAGE_TAG -t $REGISTRY/$REPOSITORY:latest backend
+          docker build --platform linux/amd64 -t $REGISTRY/$REPOSITORY:$IMAGE_TAG backend
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
-          docker push $REGISTRY/$REPOSITORY:latest
 
       - name: Deploy Backend Stack
         env:
@@ -148,9 +147,14 @@ jobs:
 
       - name: Update ECS Service & Set Desired Count
         run: |
+          TASK_DEF_ARN=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.PROJECT_NAME }}-backend \
+            --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionArn'].OutputValue" \
+            --output text)
           aws ecs update-service \
             --cluster ${{ env.PROJECT_NAME }}-cluster \
             --service ${{ env.PROJECT_NAME }}-service \
+            --task-definition "$TASK_DEF_ARN" \
             --desired-count 1 \
             --force-new-deployment
 

@@ -107,20 +107,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Debug OIDC Token
-        run: |
-          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
-          python3 -c "import jwt, json, sys; payload = jwt.decode(sys.argv[1], options={'verify_signature': False}); print(json.dumps(payload, indent=2))" "$TOKEN" || true
-          aws sts assume-role-with-web-identity \
-            --role-arn ${{ env.ROLE_TO_ASSUME }} \
-            --role-session-name test-session \
-            --web-identity-token "$TOKEN" \
-            --region ${{ env.AWS_REGION }} || true
-
-      - name: Configure AWS Credentials (OIDC)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          role-to-assume: ${{ secrets.AWS_ACCESS_KEY_ID == '' && env.ROLE_TO_ASSUME || '' }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
           audience: sts.amazonaws.com
 
@@ -188,11 +180,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Configure AWS Credentials (OIDC)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          role-to-assume: ${{ secrets.AWS_ACCESS_KEY_ID == '' && env.ROLE_TO_ASSUME || '' }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

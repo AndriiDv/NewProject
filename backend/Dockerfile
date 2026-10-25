@@ -1,8 +1,6 @@
 FROM python:3.14-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-# Lets the unchanged uvicorn app run on AWS Lambda; inert everywhere else.
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

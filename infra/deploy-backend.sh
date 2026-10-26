@@ -48,7 +48,7 @@ main() {
   if aws ecr describe-images --repository-name "$PROJECT_NAME-backend" --image-ids "imageTag=$TAG" >/dev/null 2>&1; then
     echo "    already in ECR, skipping build"
   else
-    docker build --platform linux/amd64 -t "$image" backend
+    BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker build --provenance=false --platform linux/amd64 -t "$image" backend
     aws ecr get-login-password | docker login --username AWS --password-stdin "${repository%%/*}"
     docker push "$image"
   fi

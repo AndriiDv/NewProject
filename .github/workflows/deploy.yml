@@ -178,8 +178,9 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ env.PROJECT_NAME }}-backend
           IMAGE_TAG: ${{ github.sha }}
+          BUILDX_NO_DEFAULT_ATTESTATIONS: 1
         run: |
-          docker build --platform linux/amd64 -t $REGISTRY/$REPOSITORY:$IMAGE_TAG backend
+          docker build --provenance=false --platform linux/amd64 -t $REGISTRY/$REPOSITORY:$IMAGE_TAG backend
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
       - name: Deploy Backend Stack

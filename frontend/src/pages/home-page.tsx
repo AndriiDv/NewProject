@@ -76,14 +76,24 @@ export function HomePage() {
             <span className="max-sm:hidden">Add meeting</span>
           </Button>
           {user && (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <Link
                 to="/profile"
-                className="flex size-8 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground transition-colors hover:bg-secondary/80 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-secondary/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                 aria-label="Profile"
-                title={`${user.name} · ${user.email}\nEdit profile`}
+                title={`${user.name} (${user.email}) · Edit profile`}
               >
-                {user.name.charAt(0).toUpperCase()}
+                <span className="flex size-8 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
+                  {user.name.charAt(0).toUpperCase()}
+                </span>
+                <div className="hidden flex-col text-left text-xs sm:flex">
+                  <span className="max-w-[120px] truncate font-semibold text-heading">
+                    {user.name}
+                  </span>
+                  <span className="max-w-[120px] truncate text-[10px] text-muted-foreground">
+                    {user.email}
+                  </span>
+                </div>
               </Link>
               <Button
                 variant="ghost"

@@ -83,7 +83,7 @@ export function LoginPage() {
         pending={googleLogin.isPending}
         onClick={() => googleLogin.mutate(undefined, { onError })}
       >
-        Continue with Google
+        Sign in with Google
       </GoogleButton>
       <OrDivider />
       <form onSubmit={onSubmit} noValidate>

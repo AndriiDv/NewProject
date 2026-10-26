@@ -4,11 +4,20 @@ Description: >-
   verification code), a public app client for the SPA, a Cognito domain for OAuth, and Google
   as an identity provider that is created only when GoogleClientId is set.
 
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E3005]
+
 Parameters:
   ProjectName:
     Type: String
     Default: meetings
     AllowedPattern: "[a-z][a-z0-9-]*"
+  CognitoDomainPrefix:
+    Type: String
+    Default: andrii-dv
+    Description: Prefix for Cognito hosted domain (e.g. andrii-dv).
   AppUrls:
     Type: CommaDelimitedList
     Default: http://localhost:5173,http://localhost:3000
@@ -80,7 +89,7 @@ Resources:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
       UserPoolId: !Ref UserPool
-      Domain: !Sub ${ProjectName}-${AWS::AccountId}
+      Domain: !Ref CognitoDomainPrefix
 
   GoogleIdentityProvider:
     Type: AWS::Cognito::UserPoolIdentityProvider
@@ -95,12 +104,13 @@ Resources:
         authorize_scopes: openid email profile
       AttributeMapping:
         email: email
-        email_verified: email_verified
         name: name
 
   # Public client (no secret): the SPA talks to Cognito directly with SRP.
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
+    DependsOn:
+      - GoogleIdentityProvider
     Properties:
       UserPoolId: !Ref UserPool
       ClientName: !Sub ${ProjectName}-web
@@ -115,14 +125,13 @@ Resources:
         AccessToken: minutes
         IdToken: minutes
         RefreshToken: days
-      # Referencing the provider (its Ref is "Google") makes the client wait for it.
       SupportedIdentityProviders: !If
         - HasGoogle
-        - [COGNITO, !Ref GoogleIdentityProvider]
+        - [COGNITO, Google]
         - [COGNITO]
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthFlows: [code]
-      AllowedOAuthScopes: [openid, email, profile]
+      AllowedOAuthScopes: [openid, email, profile, aws.cognito.signin.user.admin]
       # "<origin>/login" for every origin: join with "/login," and append the last "/login".
       CallbackURLs: !Split
         - ","

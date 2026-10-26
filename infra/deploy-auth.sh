@@ -26,6 +26,8 @@ main() {
 
   google_id="${GOOGLE_CLIENT_ID:-}"
   google_secret="${GOOGLE_CLIENT_SECRET:-}"
+  domain_prefix="${COGNITO_DOMAIN_PREFIX:-andrii-dv}"
+
   if [ -n "$google_id" ] && [ -z "$google_secret" ]; then
     echo "GOOGLE_CLIENT_ID is set but GOOGLE_CLIENT_SECRET is empty; set both or neither." >&2
     exit 1
@@ -34,12 +36,14 @@ main() {
   echo "==> [1/2] Cognito user pool ($AUTH_STACK in $AWS_REGION)"
   urls="$(app_urls)"
   echo "    App URLs: $urls"
+  echo "    Cognito Domain Prefix: $domain_prefix"
   echo "    Google sign-in: $([ -n "$google_id" ] && echo enabled || echo disabled)"
   aws cloudformation deploy \
     --stack-name "$AUTH_STACK" \
     --template-file infra/auth.yaml \
     --parameter-overrides \
       "ProjectName=$PROJECT_NAME" \
+      "CognitoDomainPrefix=$domain_prefix" \
       "AppUrls=$urls" \
       "GoogleClientId=$google_id" \
       "GoogleClientSecret=$google_secret" \

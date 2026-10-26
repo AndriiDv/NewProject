@@ -3,13 +3,14 @@
 `users`; later requests keep its email and name in sync with the token."""
 
 import asyncio
+import json
 import time
 import urllib.request
 from functools import cache
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -99,32 +100,83 @@ def _unauthorized(detail: str) -> HTTPException:
     )
 
 
+def extract_claims_from_request(request: Request) -> dict | None:
+    """Extract user claims from API Gateway request context (authorizer.claims)."""
+    # 1. From ASGI scope (e.g. Mangum Lambda handler)
+    aws_event = request.scope.get("aws.event")
+    if isinstance(aws_event, dict):
+        req_ctx = aws_event.get("requestContext")
+        if isinstance(req_ctx, dict):
+            authorizer = req_ctx.get("authorizer")
+            if isinstance(authorizer, dict):
+                # REST API / Lambda Authorizer format
+                claims = authorizer.get("claims")
+                if isinstance(claims, dict):
+                    return claims
+                # HTTP API JWT Authorizer format
+                jwt_auth = authorizer.get("jwt")
+                if isinstance(jwt_auth, dict) and isinstance(jwt_auth.get("claims"), dict):
+                    return jwt_auth["claims"]
+
+    # 2. From Lambda Web Adapter header (x-amzn-request-context)
+    ctx_hdr = request.headers.get("x-amzn-request-context")
+    if ctx_hdr:
+        try:
+            req_ctx = json.loads(ctx_hdr)
+            if isinstance(req_ctx, dict):
+                authorizer = req_ctx.get("authorizer")
+                if isinstance(authorizer, dict):
+                    claims = authorizer.get("claims")
+                    if isinstance(claims, dict):
+                        return claims
+                    jwt_auth = authorizer.get("jwt")
+                    if isinstance(jwt_auth, dict) and isinstance(jwt_auth.get("claims"), dict):
+                        return jwt_auth["claims"]
+        except Exception:
+            pass
+
+    return None
+
+
 async def get_current_user(
+    request: Request,
     session: SessionDep,
     verifier: Annotated[TokenVerifier, Depends(get_verifier)],
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> User:
-    if credentials is None:
-        raise _unauthorized("Not authenticated")
-    try:
-        claims = await verifier.verify(credentials.credentials)
-    except InvalidTokenError:
-        raise _unauthorized("Invalid or expired token") from None
+    claims = extract_claims_from_request(request)
+
+    if claims is None:
+        if credentials is None:
+            raise _unauthorized("Not authenticated")
+        try:
+            claims = await verifier.verify(credentials.credentials)
+        except InvalidTokenError:
+            raise _unauthorized("Invalid or expired token") from None
+
+    # Validate required claims
+    sub = claims.get("sub")
+    if not sub:
+        raise _unauthorized("Invalid user claims: missing sub")
 
     email = claims.get("email", "")
-    name = (claims.get("name") or email.split("@")[0])[:100]
-    user = await session.scalar(select(User).where(User.cognito_sub == claims["sub"]))
+    name = (claims.get("name") or email.split("@")[0] or "User")[:100]
+
+    user = await session.scalar(select(User).where(User.cognito_sub == sub))
     if user is None:
-        user = User(cognito_sub=claims["sub"], email=email, name=name)
+        user = User(cognito_sub=sub, email=email, name=name)
         session.add(user)
         try:
             await session.commit()
         except IntegrityError:
             # A parallel first request created the row; use that one.
             await session.rollback()
-            user = await session.scalar(select(User).where(User.cognito_sub == claims["sub"]))
-    elif (user.email, user.name) != (email, name):
-        user.email, user.name = email, name
+            user = await session.scalar(select(User).where(User.cognito_sub == sub))
+    elif (user.email, user.name) != (email, name) and (email or name):
+        if email:
+            user.email = email
+        if name:
+            user.name = name
         await session.commit()
     return user
 

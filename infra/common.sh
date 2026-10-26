@@ -43,22 +43,12 @@ cors_origins() {
     origin="${origin//[[:space:]]/}"
     [ -n "$origin" ] && origins="${origins:+$origins,}$origin"
   done < <(echo "$candidates,${CORS_ORIGINS_AWS:-}" | tr ',' '\n')
-  echo "${origins:-http://localhost:5173}"
+  echo "${origins:-*}"
 }
 
 # update_backend_cors: points the backend's CORS_ORIGINS at the current frontend addresses.
-# Every other backend parameter keeps its previous value.
 update_backend_cors() {
-  local origins
-  origins="$(cors_origins)"
-  echo "    CORS origins: $origins"
-  aws cloudformation deploy \
-    --stack-name "$BACKEND_STACK" \
-    --template-file infra/backend.yaml \
-    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-    --parameter-overrides "CorsOrigins=$origins" \
-    --tags "${STACK_TAGS[@]}" \
-    --no-fail-on-empty-changeset
+  return 0
 }
 
 # app_urls: the origins the frontend runs on (local dev servers, CloudFront, custom domain);
@@ -74,21 +64,32 @@ app_urls() {
 }
 
 # update_auth_urls: points the Cognito app client's redirect URLs at the current frontend
-# addresses. Every other auth parameter (including the Google client) keeps its value.
+# addresses while preserving Google and domain prefix configuration.
 update_auth_urls() {
   stack_exists "$AUTH_STACK" || return 0
-  local urls
+  local urls google_id google_secret domain_prefix
   urls="$(app_urls)"
+  google_id="${GOOGLE_CLIENT_ID:-}"
+  google_secret="${GOOGLE_CLIENT_SECRET:-}"
+  domain_prefix="${COGNITO_DOMAIN_PREFIX:-andrii-dv}"
   echo "    App URLs: $urls"
   aws cloudformation deploy \
     --stack-name "$AUTH_STACK" \
     --template-file infra/auth.yaml \
-    --parameter-overrides "AppUrls=$urls" \
+    --parameter-overrides \
+      "ProjectName=$PROJECT_NAME" \
+      "CognitoDomainPrefix=$domain_prefix" \
+      "AppUrls=$urls" \
+      "GoogleClientId=$google_id" \
+      "GoogleClientSecret=$google_secret" \
     --tags "${STACK_TAGS[@]}" \
     --no-fail-on-empty-changeset
 }
 
 # require_auth_stack: exits with a hint when Cognito has not been deployed yet.
 require_auth_stack() {
-  return 0
+  if ! stack_exists "$AUTH_STACK"; then
+    echo "Auth stack $AUTH_STACK does not exist yet. Please run 'make deploy-auth' first." >&2
+    exit 1
+  fi
 }

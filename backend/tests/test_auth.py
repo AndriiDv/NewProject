@@ -1,7 +1,10 @@
+import json
 import time
 
 from httpx import AsyncClient
+from starlette.requests import Request
 
+from app.auth import extract_claims_from_request
 from tests.conftest import make_token
 from tests.test_api import meeting_payload
 
@@ -11,6 +14,76 @@ def bearer(token: str) -> dict:
 
 
 BOB = bearer(make_token("bob"))
+
+
+def test_extract_claims_from_asgi_scope() -> None:
+    scope = {
+        "type": "http",
+        "aws.event": {
+            "requestContext": {
+                "authorizer": {
+                    "claims": {
+                        "sub": "sub-123",
+                        "email": "user@example.com",
+                        "name": "Test User",
+                    }
+                }
+            }
+        },
+        "headers": [],
+    }
+    req = Request(scope)
+    claims = extract_claims_from_request(req)
+    assert claims == {"sub": "sub-123", "email": "user@example.com", "name": "Test User"}
+
+
+def test_extract_claims_from_jwt_scope() -> None:
+    scope = {
+        "type": "http",
+        "aws.event": {
+            "requestContext": {
+                "authorizer": {
+                    "jwt": {
+                        "claims": {
+                            "sub": "jwt-sub-456",
+                            "email": "jwt@example.com",
+                            "name": "JWT User",
+                        }
+                    }
+                }
+            }
+        },
+        "headers": [],
+    }
+    req = Request(scope)
+    claims = extract_claims_from_request(req)
+    assert claims == {"sub": "jwt-sub-456", "email": "jwt@example.com", "name": "JWT User"}
+
+
+def test_extract_claims_from_lwa_header() -> None:
+    ctx = {
+        "authorizer": {
+            "claims": {
+                "sub": "lwa-sub-789",
+                "email": "lwa@example.com",
+                "name": "LWA User",
+            }
+        }
+    }
+    scope = {
+        "type": "http",
+        "headers": [(b"x-amzn-request-context", json.dumps(ctx).encode())],
+    }
+    req = Request(scope)
+    claims = extract_claims_from_request(req)
+    assert claims == {"sub": "lwa-sub-789", "email": "lwa@example.com", "name": "LWA User"}
+
+
+def test_extract_claims_returns_none_when_absent() -> None:
+    scope = {"type": "http", "headers": []}
+    req = Request(scope)
+    claims = extract_claims_from_request(req)
+    assert claims is None
 
 
 async def test_health_needs_no_token(client: AsyncClient) -> None:
@@ -82,3 +155,54 @@ async def test_meetings_are_private(client: AsyncClient) -> None:
     assert (await client.delete(url)).status_code == 404
     assert (await client.get(url, headers=BOB)).json()["title"] == "Bob's"
     assert (await client.get(f"/api/meetings/{mine['id']}", headers=BOB)).status_code == 404
+
+
+async def test_api_gateway_authorizer_claims(client: AsyncClient) -> None:
+    ctx = {
+        "authorizer": {
+            "claims": {
+                "sub": "google-oauth2-12345",
+                "email": "user@google.com",
+                "name": "Google User",
+            }
+        }
+    }
+    headers = {"x-amzn-request-context": json.dumps(ctx)}
+    response = await client.get("/api/me", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "user@google.com"
+    assert data["name"] == "Google User"
+
+
+async def test_api_gateway_authorizer_jwt_claims(client: AsyncClient) -> None:
+    ctx = {
+        "authorizer": {
+            "jwt": {
+                "claims": {
+                    "sub": "google-oauth2-67890",
+                    "email": "jwt@google.com",
+                    "name": "JWT Google User",
+                }
+            }
+        }
+    }
+    headers = {"x-amzn-request-context": json.dumps(ctx)}
+    response = await client.get("/api/me", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "jwt@google.com"
+    assert data["name"] == "JWT Google User"
+
+
+async def test_api_gateway_missing_sub(client: AsyncClient) -> None:
+    ctx = {
+        "authorizer": {
+            "claims": {
+                "email": "no-sub@example.com",
+            }
+        }
+    }
+    headers = {"x-amzn-request-context": json.dumps(ctx)}
+    response = await client.get("/api/me", headers=headers)
+    assert response.status_code == 401

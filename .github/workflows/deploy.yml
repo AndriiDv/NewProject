@@ -13,6 +13,7 @@ env:
   AWS_REGION: eu-north-1
   ROLE_TO_ASSUME: arn:aws:iam::522400670358:role/GitHubActionsRole-NewProject
   PROJECT_NAME: new-project
+  COGNITO_DOMAIN_PREFIX: andrii-dv
   AWS_STS_REGIONAL_ENDPOINTS: regional
 
 jobs:
@@ -100,10 +101,58 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://meetings:meetings@localhost:5432/meetings_test
         run: uv run pytest -v
 
-  deploy-backend:
-    name: Build & Deploy Backend (ECS Fargate)
+  deploy-auth:
+    name: Deploy Cognito Auth
     needs: [backend-lint, frontend-lint, backend-test]
     runs-on: ubuntu-latest
+    outputs:
+      user_pool_id: ${{ steps.auth.outputs.user_pool_id }}
+      client_id: ${{ steps.auth.outputs.client_id }}
+      domain: ${{ steps.auth.outputs.domain }}
+      issuer: ${{ steps.auth.outputs.issuer }}
+      google_enabled: ${{ steps.auth.outputs.google_enabled }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Deploy Auth Stack
+        id: auth
+        env:
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          ./infra/deploy-auth.sh || true
+          POOL_ID=$(aws cloudformation describe-stacks --stack-name ${{ env.PROJECT_NAME }}-auth \
+            --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text 2>/dev/null || echo "")
+          CLIENT_ID=$(aws cloudformation describe-stacks --stack-name ${{ env.PROJECT_NAME }}-auth \
+            --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" --output text 2>/dev/null || echo "")
+          DOMAIN=$(aws cloudformation describe-stacks --stack-name ${{ env.PROJECT_NAME }}-auth \
+            --query "Stacks[0].Outputs[?OutputKey=='Domain'].OutputValue" --output text 2>/dev/null || echo "")
+          ISSUER=$(aws cloudformation describe-stacks --stack-name ${{ env.PROJECT_NAME }}-auth \
+            --query "Stacks[0].Outputs[?OutputKey=='Issuer'].OutputValue" --output text 2>/dev/null || echo "")
+          GOOGLE=$(aws cloudformation describe-stacks --stack-name ${{ env.PROJECT_NAME }}-auth \
+            --query "Stacks[0].Outputs[?OutputKey=='GoogleEnabled'].OutputValue" --output text 2>/dev/null || echo "false")
+          echo "user_pool_id=$POOL_ID" >> $GITHUB_OUTPUT
+          echo "client_id=$CLIENT_ID" >> $GITHUB_OUTPUT
+          echo "domain=$DOMAIN" >> $GITHUB_OUTPUT
+          echo "issuer=$ISSUER" >> $GITHUB_OUTPUT
+          echo "google_enabled=$GOOGLE" >> $GITHUB_OUTPUT
+
+  deploy-backend:
+    name: Build & Deploy Backend (Serverless Lambda + API Gateway)
+    needs: [deploy-auth]
+    runs-on: ubuntu-latest
+    outputs:
+      api_url: ${{ steps.backend.outputs.api_url }}
+      api_base_url: ${{ steps.backend.outputs.api_base_url }}
     steps:
       - uses: actions/checkout@v5
 
@@ -130,11 +179,26 @@ jobs:
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
       - name: Deploy Backend Stack
+        id: backend
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ env.PROJECT_NAME }}-backend
           IMAGE_TAG: ${{ github.sha }}
+          POOL_ID: ${{ needs.deploy-auth.outputs.user_pool_id }}
+          CLIENT_ID: ${{ needs.deploy-auth.outputs.client_id }}
+          ISSUER: ${{ needs.deploy-auth.outputs.issuer }}
         run: |
+          PASSWORD_PARAM="/${{ env.PROJECT_NAME }}/db-password"
+          if aws ssm get-parameter --name "$PASSWORD_PARAM" >/dev/null 2>&1; then
+            DB_PASSWORD=$(aws ssm get-parameter --name "$PASSWORD_PARAM" --with-decryption --query Parameter.Value --output text)
+          else
+            DB_PASSWORD=$(openssl rand -hex 24)
+            aws ssm put-parameter --name "$PASSWORD_PARAM" --type SecureString --value "$DB_PASSWORD" >/dev/null
+          fi
+          JWKS=""
+          if [ -n "$ISSUER" ]; then
+            JWKS=$(curl -fsS "$ISSUER/.well-known/jwks.json" 2>/dev/null | python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))' 2>/dev/null || echo "")
+          fi
           aws cloudformation deploy \
             --stack-name ${{ env.PROJECT_NAME }}-backend \
             --template-file infra/backend.yaml \
@@ -142,44 +206,47 @@ jobs:
             --parameter-overrides \
               ProjectName=${{ env.PROJECT_NAME }} \
               ImageUri=$REGISTRY/$REPOSITORY:$IMAGE_TAG \
+              DBPassword="$DB_PASSWORD" \
+              CognitoUserPoolId="${POOL_ID:-}" \
+              CognitoClientId="${CLIENT_ID:-}" \
+              CognitoJwks="$JWKS" \
               CorsOrigins="*" \
             --no-fail-on-empty-changeset
 
-      - name: Update ECS Service & Set Desired Count
-        run: |
-          TASK_DEF_ARN=$(aws cloudformation describe-stacks \
+          API_URL=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.PROJECT_NAME }}-backend \
-            --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionArn'].OutputValue" \
-            --output text)
-          aws ecs update-service \
-            --cluster ${{ env.PROJECT_NAME }}-cluster \
-            --service ${{ env.PROJECT_NAME }}-service \
-            --task-definition "$TASK_DEF_ARN" \
-            --desired-count 1 \
-            --force-new-deployment
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+          API_BASE=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.PROJECT_NAME }}-backend \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiBaseUrl'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+          echo "api_base_url=$API_BASE" >> $GITHUB_OUTPUT
 
       - name: Wait for Backend Health Check
         run: |
-          ALB_DNS=$(aws cloudformation describe-stacks \
+          API_URL=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.PROJECT_NAME }}-backend \
-            --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" \
-            --output text)
-          API_URL="http://$ALB_DNS/api"
-          echo "Waiting for health check at $API_URL/health..."
-          for i in $(seq 1 30); do
-            if curl -fsS --max-time 10 "$API_URL/health" > /dev/null 2>&1; then
-              echo "Backend is healthy at $API_URL!"
-              exit 0
-            fi
-            echo "Waiting for backend to become healthy (attempt $i/30)..."
-            sleep 10
-          done
-          echo "Backend failed to become healthy in time."
-          exit 1
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+          if [ -n "$API_URL" ] && [ "$API_URL" != "None" ]; then
+            echo "Waiting for health check at $API_URL/health..."
+            for i in $(seq 1 30); do
+              if curl -fsS --max-time 10 "$API_URL/health" > /dev/null 2>&1; then
+                echo "Backend is healthy at $API_URL!"
+                exit 0
+              fi
+              echo "Waiting for backend to become healthy (attempt $i/30)..."
+              sleep 10
+            done
+            echo "Backend failed to become healthy in time."
+            exit 1
+          fi
 
   deploy-frontend:
     name: Build & Deploy Frontend (S3 + CloudFront)
-    needs: [deploy-backend]
+    needs: [deploy-auth, deploy-backend]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -203,39 +270,54 @@ jobs:
       - name: Fetch Infrastructure Info
         id: info
         run: |
-          ALB_DNS=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.PROJECT_NAME }}-backend \
-            --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" \
-            --output text)
           BUCKET=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.PROJECT_NAME }}-frontend \
             --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" \
-            --output text)
+            --output text 2>/dev/null || echo "")
           DIST_ID=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.PROJECT_NAME }}-frontend \
             --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
-            --output text)
-          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
+            --output text 2>/dev/null || echo "")
           echo "bucket=$BUCKET" >> $GITHUB_OUTPUT
           echo "dist_id=$DIST_ID" >> $GITHUB_OUTPUT
 
       - name: Build Frontend Bundle
         working-directory: frontend
         env:
-          VITE_API_URL: http://${{ steps.info.outputs.alb_dns }}
+          VITE_API_URL: ${{ needs.deploy-backend.outputs.api_base_url }}
+          COGNITO_USER_POOL_ID: ${{ needs.deploy-auth.outputs.user_pool_id }}
+          COGNITO_CLIENT_ID: ${{ needs.deploy-auth.outputs.client_id }}
+          COGNITO_DOMAIN: ${{ needs.deploy-auth.outputs.domain }}
+          COGNITO_GOOGLE_ENABLED: ${{ needs.deploy-auth.outputs.google_enabled }}
         run: |
           npm ci
           npm run build
 
+      - name: Deploy Frontend Stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name ${{ env.PROJECT_NAME }}-frontend \
+            --template-file infra/frontend.yaml \
+            --parameter-overrides "ProjectName=${{ env.PROJECT_NAME }}" \
+            --no-fail-on-empty-changeset
+
       - name: Sync Frontend Assets to S3
         run: |
-          aws s3 sync frontend/dist/assets "s3://${{ steps.info.outputs.bucket }}/assets" --delete \
+          BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.PROJECT_NAME }}-frontend \
+            --query "Stacks[0].Outputs[?OutputKey=='BucketName'].OutputValue" \
+            --output text)
+          aws s3 sync frontend/dist/assets "s3://${BUCKET}/assets" --delete \
             --cache-control "public, max-age=31536000, immutable"
-          aws s3 sync frontend/dist "s3://${{ steps.info.outputs.bucket }}" --delete --exclude "assets/*" \
+          aws s3 sync frontend/dist "s3://${BUCKET}" --delete --exclude "assets/*" \
             --cache-control "no-cache"
 
       - name: Invalidate CloudFront Cache
         run: |
+          DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.PROJECT_NAME }}-frontend \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue" \
+            --output text)
           aws cloudfront create-invalidation \
-            --distribution-id "${{ steps.info.outputs.dist_id }}" \
+            --distribution-id "$DIST_ID" \
             --paths "/*"

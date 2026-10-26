@@ -50,7 +50,7 @@ export function configureAuth() {
           ...(authConfig.domain && {
             oauth: {
               domain: authConfig.domain,
-              scopes: ['openid', 'email', 'profile'],
+              scopes: ['openid', 'email', 'profile', 'aws.cognito.signin.user.admin'],
               redirectSignIn: redirect,
               redirectSignOut: redirect,
               responseType: 'code',

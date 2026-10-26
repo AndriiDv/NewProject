@@ -3,7 +3,7 @@ import { Hub } from 'aws-amplify/utils'
 import { signOut as cognitoSignOut } from 'aws-amplify/auth'
 import { useEffect, useState, type ReactNode } from 'react'
 
-import { AuthContext, authConfigured, loadUser, type User } from '@/lib/auth'
+import { AuthContext, authConfig, authConfigured, loadUser, type User } from '@/lib/auth'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
@@ -32,9 +32,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = (next: User) => setUser(next)
   const signOut = async () => {
-    await cognitoSignOut()
+    try {
+      await cognitoSignOut()
+    } catch {
+      // ignore
+    }
     setUser(null)
     queryClient.clear()
+    if (authConfig.domain && authConfig.clientId) {
+      const logoutRedirect = encodeURIComponent(`${window.location.origin}/login`)
+      const domain = authConfig.domain.replace(/^https?:\/\//, '')
+      window.location.assign(
+        `https://${domain}/logout?client_id=${authConfig.clientId}&logout_uri=${logoutRedirect}`,
+      )
+    }
   }
 
   return <AuthContext value={{ user, signIn, signOut }}>{children}</AuthContext>

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from mangum import Mangum
 from sqlalchemy import text
 
 from app.auth import get_current_user
@@ -35,3 +36,6 @@ api.include_router(me.router)
 api.include_router(meetings.router)
 api.include_router(participants.router, dependencies=[Depends(get_current_user)])
 app.include_router(api)
+
+# AWS Lambda handler using Mangum ASGI adapter
+handler = Mangum(app, lifespan="off")

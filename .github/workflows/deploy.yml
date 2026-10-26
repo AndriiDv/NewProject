@@ -195,22 +195,25 @@ jobs:
             DB_PASSWORD=$(openssl rand -hex 24)
             aws ssm put-parameter --name "$PASSWORD_PARAM" --type SecureString --value "$DB_PASSWORD" >/dev/null
           fi
-          JWKS=""
-          if [ -n "$ISSUER" ]; then
-            JWKS=$(curl -fsS "$ISSUER/.well-known/jwks.json" 2>/dev/null | python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin), separators=(",", ":")))' 2>/dev/null || echo "")
+          if [ -z "$POOL_ID" ]; then
+            POOL_ID=$(aws cloudformation describe-stacks --stack-name ${{ env.PROJECT_NAME }}-auth \
+              --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text 2>/dev/null || echo "")
+          fi
+          if [ -z "$CLIENT_ID" ]; then
+            CLIENT_ID=$(aws cloudformation describe-stacks --stack-name ${{ env.PROJECT_NAME }}-auth \
+              --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" --output text 2>/dev/null || echo "")
           fi
           aws cloudformation deploy \
             --stack-name ${{ env.PROJECT_NAME }}-backend \
             --template-file infra/backend.yaml \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --parameter-overrides \
-              ProjectName=${{ env.PROJECT_NAME }} \
-              ImageUri=$REGISTRY/$REPOSITORY:$IMAGE_TAG \
-              DBPassword="$DB_PASSWORD" \
-              CognitoUserPoolId="${POOL_ID:-}" \
-              CognitoClientId="${CLIENT_ID:-}" \
-              CognitoJwks="$JWKS" \
-              CorsOrigins="*" \
+              "ProjectName=${{ env.PROJECT_NAME }}" \
+              "ImageUri=$REGISTRY/$REPOSITORY:$IMAGE_TAG" \
+              "DBPassword=$DB_PASSWORD" \
+              "CognitoUserPoolId=$POOL_ID" \
+              "CognitoClientId=$CLIENT_ID" \
+              "CorsOrigins=*" \
             --no-fail-on-empty-changeset
 
           API_URL=$(aws cloudformation describe-stacks \
@@ -283,14 +286,48 @@ jobs:
 
       - name: Build Frontend Bundle
         working-directory: frontend
-        env:
-          VITE_API_URL: ${{ needs.deploy-backend.outputs.api_base_url }}
-          COGNITO_USER_POOL_ID: ${{ needs.deploy-auth.outputs.user_pool_id }}
-          COGNITO_CLIENT_ID: ${{ needs.deploy-auth.outputs.client_id }}
-          COGNITO_DOMAIN: ${{ needs.deploy-auth.outputs.domain }}
-          COGNITO_GOOGLE_ENABLED: ${{ needs.deploy-auth.outputs.google_enabled }}
         run: |
+          API_BASE="${{ needs.deploy-backend.outputs.api_base_url }}"
+          if [ -z "$API_BASE" ]; then
+            API_BASE=$(aws cloudformation describe-stacks \
+              --stack-name ${{ env.PROJECT_NAME }}-backend \
+              --query "Stacks[0].Outputs[?OutputKey=='ApiBaseUrl'].OutputValue" \
+              --output text 2>/dev/null || echo "")
+          fi
+          POOL_ID="${{ needs.deploy-auth.outputs.user_pool_id }}"
+          if [ -z "$POOL_ID" ]; then
+            POOL_ID=$(aws cloudformation describe-stacks \
+              --stack-name ${{ env.PROJECT_NAME }}-auth \
+              --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" \
+              --output text 2>/dev/null || echo "")
+          fi
+          CLIENT_ID="${{ needs.deploy-auth.outputs.client_id }}"
+          if [ -z "$CLIENT_ID" ]; then
+            CLIENT_ID=$(aws cloudformation describe-stacks \
+              --stack-name ${{ env.PROJECT_NAME }}-auth \
+              --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" \
+              --output text 2>/dev/null || echo "")
+          fi
+          DOMAIN="${{ needs.deploy-auth.outputs.domain }}"
+          if [ -z "$DOMAIN" ]; then
+            DOMAIN=$(aws cloudformation describe-stacks \
+              --stack-name ${{ env.PROJECT_NAME }}-auth \
+              --query "Stacks[0].Outputs[?OutputKey=='Domain'].OutputValue" \
+              --output text 2>/dev/null || echo "")
+          fi
+          GOOGLE="${{ needs.deploy-auth.outputs.google_enabled }}"
+          if [ -z "$GOOGLE" ]; then
+            GOOGLE=$(aws cloudformation describe-stacks \
+              --stack-name ${{ env.PROJECT_NAME }}-auth \
+              --query "Stacks[0].Outputs[?OutputKey=='GoogleEnabled'].OutputValue" \
+              --output text 2>/dev/null || echo "false")
+          fi
           npm ci
+          VITE_API_URL="$API_BASE" \
+          COGNITO_USER_POOL_ID="$POOL_ID" \
+          COGNITO_CLIENT_ID="$CLIENT_ID" \
+          COGNITO_DOMAIN="$DOMAIN" \
+          COGNITO_GOOGLE_ENABLED="$GOOGLE" \
           npm run build
 
       - name: Deploy Frontend Stack

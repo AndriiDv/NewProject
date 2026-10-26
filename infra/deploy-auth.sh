@@ -7,6 +7,7 @@ set -euo pipefail
 # set_env KEY VALUE: sets KEY=VALUE in .env, replacing an existing line or appending one.
 set_env() {
   local key="$1" value="$2" tmp
+  touch .env
   tmp="$(mktemp)"
   if grep -q "^$key=" .env; then
     awk -v k="$key" -v v="$value" 'index($0, k "=") == 1 { print k "=" v; next } { print }' .env >"$tmp"

@@ -2,7 +2,11 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   Meetings app - backend API on AWS Lambda (container image) behind HTTP API Gateway
   with Cognito JWT Authorizer, connected to an Aurora Serverless v2 PostgreSQL database.
-  The Lambda function runs in private subnets with access to the database.
+
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [W2001]
 
 Parameters:
   ProjectName:
@@ -12,10 +16,23 @@ Parameters:
   ImageUri:
     Type: String
     Description: Full backend image URI including tag (pushed by deploy-backend).
+  DatabaseEndpoint:
+    Type: String
+    Default: new-project-db.cluster-cxuqe02cwqxo.eu-north-1.rds.amazonaws.com
+    Description: Aurora Serverless v2 PostgreSQL cluster endpoint.
+  DBName:
+    Type: String
+    Default: postgres
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9_]*"
+  DBUser:
+    Type: String
+    Default: meetings
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9_]*"
   DBPassword:
     Type: String
+    Default: ""
     NoEcho: true
-    Description: Master password for Aurora PostgreSQL database.
+    Description: Optional database password.
   CorsOrigins:
     Type: String
     Default: "*"
@@ -29,148 +46,13 @@ Parameters:
   CognitoJwks:
     Type: String
     Default: ""
-    Description: Preloaded JWKS keys for offline token verification inside VPC.
+    Description: Preloaded JWKS keys for offline token verification.
   MemorySize:
     Type: Number
     Default: 512
     Description: Lambda memory in MB.
-  DBMinCapacity:
-    Type: Number
-    Default: 0
-    Description: Minimum Aurora capacity units (0 allows auto-pause).
-  DBMaxCapacity:
-    Type: Number
-    Default: 1
-    Description: Maximum Aurora capacity units.
-  DBAutoPauseSeconds:
-    Type: Number
-    Default: 300
-    MinValue: 300
-    MaxValue: 86400
-    Description: Idle time before the database pauses (only with DBMinCapacity 0).
-  DBName:
-    Type: String
-    Default: meetings
-    AllowedPattern: "[a-zA-Z][a-zA-Z0-9_]*"
-  DBUser:
-    Type: String
-    Default: meetings
-    AllowedPattern: "[a-zA-Z][a-zA-Z0-9_]*"
 
 Resources:
-  # ---------------------------------------------------------------- Network
-  Vpc:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - Key: Name
-          Value: !Ref ProjectName
-        - Key: PROJECT_NAME
-          Value: !Ref ProjectName
-
-  PrivateSubnetA:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref Vpc
-      CidrBlock: 10.0.10.0/24
-      AvailabilityZone: !Select [0, !GetAZs ""]
-      Tags:
-        - Key: Name
-          Value: !Sub ${ProjectName}-private-a
-        - Key: PROJECT_NAME
-          Value: !Ref ProjectName
-
-  PrivateSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref Vpc
-      CidrBlock: 10.0.11.0/24
-      AvailabilityZone: !Select [1, !GetAZs ""]
-      Tags:
-        - Key: Name
-          Value: !Sub ${ProjectName}-private-b
-        - Key: PROJECT_NAME
-          Value: !Ref ProjectName
-
-  # --------------------------------------------------------- Security groups
-  FunctionSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Backend Lambda function (outbound only)
-      VpcId: !Ref Vpc
-      Tags:
-        - Key: PROJECT_NAME
-          Value: !Ref ProjectName
-
-  DatabaseSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: PostgreSQL, reachable only from the backend function
-      VpcId: !Ref Vpc
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 5432
-          ToPort: 5432
-          SourceSecurityGroupId: !Ref FunctionSecurityGroup
-      Tags:
-        - Key: PROJECT_NAME
-          Value: !Ref ProjectName
-
-  # ---------------------------------------------------------------- Database
-  DatabaseSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties:
-      DBSubnetGroupDescription: Private subnets for the backend database
-      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
-      Tags:
-        - Key: PROJECT_NAME
-          Value: !Ref ProjectName
-
-  Database:
-    Type: AWS::RDS::DBCluster
-    Metadata:
-      cfn-lint:
-        config:
-          ignore_checks: [E3690, W1011]
-    DeletionPolicy: Snapshot
-    UpdateReplacePolicy: Snapshot
-    Properties:
-      DBClusterIdentifier: !Sub ${ProjectName}-db
-      Engine: aurora-postgresql
-      EngineVersion: "17.11"
-      ServerlessV2ScalingConfiguration:
-        MinCapacity: !Ref DBMinCapacity
-        MaxCapacity: !Ref DBMaxCapacity
-        SecondsUntilAutoPause: !Ref DBAutoPauseSeconds
-      StorageEncrypted: true
-      DatabaseName: !Ref DBName
-      MasterUsername: !Ref DBUser
-      MasterUserPassword: !Ref DBPassword
-      DBSubnetGroupName: !Ref DatabaseSubnetGroup
-      VpcSecurityGroupIds: [!Ref DatabaseSecurityGroup]
-      BackupRetentionPeriod: 1
-      CopyTagsToSnapshot: true
-      Tags:
-        - Key: PROJECT_NAME
-          Value: !Ref ProjectName
-
-  DatabaseInstance:
-    Type: AWS::RDS::DBInstance
-    Properties:
-      DBInstanceIdentifier: !Sub ${ProjectName}-db-1
-      DBClusterIdentifier: !Ref Database
-      Engine: aurora-postgresql
-      DBInstanceClass: db.serverless
-      PubliclyAccessible: false
-      EnablePerformanceInsights: false
-      AutoMinorVersionUpgrade: true
-      Tags:
-        - Key: PROJECT_NAME
-          Value: !Ref ProjectName
-
   # ------------------------------------------------------------------ Backend
   LogGroup:
     Type: AWS::Logs::LogGroup
@@ -191,14 +73,21 @@ Resources:
             Principal: { Service: lambda.amazonaws.com }
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: RdsDbConnectPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "rds-db:connect"
+                Resource: !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/*"
       Tags:
         - Key: PROJECT_NAME
           Value: !Ref ProjectName
 
   Function:
     Type: AWS::Lambda::Function
-    DependsOn: DatabaseInstance
     Properties:
       FunctionName: !Sub ${ProjectName}-backend
       PackageType: Image
@@ -208,14 +97,11 @@ Resources:
       MemorySize: !Ref MemorySize
       Timeout: 60
       Role: !GetAtt FunctionRole.Arn
-      VpcConfig:
-        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
-        SecurityGroupIds: [!Ref FunctionSecurityGroup]
       LoggingConfig:
         LogGroup: !Ref LogGroup
       Environment:
         Variables:
-          DATABASE_URL: !Sub postgresql+asyncpg://${DBUser}:${DBPassword}@${Database.Endpoint.Address}:${Database.Endpoint.Port}/${DBName}
+          DATABASE_URL: !Sub postgresql+asyncpg://${DBUser}@${DatabaseEndpoint}:5432/${DBName}
           CORS_ORIGINS: !Ref CorsOrigins
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
           COGNITO_CLIENT_ID: !Ref CognitoClientId
@@ -336,7 +222,7 @@ Outputs:
   FunctionName:
     Value: !Ref Function
   DatabaseEndpoint:
-    Value: !GetAtt Database.Endpoint.Address
+    Value: !Ref DatabaseEndpoint
   HttpApiId:
     Value: !Ref HttpApi
   LogGroup:

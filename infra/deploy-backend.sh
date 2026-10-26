@@ -67,6 +67,12 @@ main() {
   echo "    CORS origins: $cors"
   echo "    First deployment creates Aurora Serverless v2 PostgreSQL (takes ~10-15 min)"
 
+  db_endpoint="${DATABASE_ENDPOINT:-}"
+  if [ -z "$db_endpoint" ]; then
+    db_endpoint="$(aws rds describe-db-clusters --db-cluster-identifier "$PROJECT_NAME-db" \
+      --query "DBClusters[0].Endpoint" --output text 2>/dev/null || echo "")"
+  fi
+
   aws cloudformation deploy \
     --stack-name "$BACKEND_STACK" \
     --template-file infra/backend.yaml \
@@ -74,6 +80,7 @@ main() {
     --parameter-overrides \
       "ProjectName=$PROJECT_NAME" \
       "ImageUri=$image" \
+      "DatabaseEndpoint=${db_endpoint:-$PROJECT_NAME-db.cluster-cxuqe02cwqxo.eu-north-1.rds.amazonaws.com}" \
       "DBPassword=$db_password" \
       "MemorySize=$LAMBDA_MEMORY" \
       "CorsOrigins=$cors" \

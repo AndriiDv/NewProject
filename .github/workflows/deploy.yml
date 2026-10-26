@@ -207,6 +207,8 @@ jobs:
             CLIENT_ID=$(aws cloudformation describe-stacks --stack-name ${{ env.PROJECT_NAME }}-auth \
               --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue" --output text 2>/dev/null || echo "")
           fi
+          DB_ENDPOINT=$(aws rds describe-db-clusters --db-cluster-identifier ${{ env.PROJECT_NAME }}-db \
+            --query "DBClusters[0].Endpoint" --output text 2>/dev/null || echo "")
           aws cloudformation deploy \
             --stack-name ${{ env.PROJECT_NAME }}-backend \
             --template-file infra/backend.yaml \
@@ -214,6 +216,7 @@ jobs:
             --parameter-overrides \
               "ProjectName=${{ env.PROJECT_NAME }}" \
               "ImageUri=$REGISTRY/$REPOSITORY:$IMAGE_TAG" \
+              "DatabaseEndpoint=${DB_ENDPOINT:-new-project-db.cluster-cxuqe02cwqxo.eu-north-1.rds.amazonaws.com}" \
               "DBPassword=$DB_PASSWORD" \
               "CognitoUserPoolId=$POOL_ID" \
               "CognitoClientId=$CLIENT_ID" \

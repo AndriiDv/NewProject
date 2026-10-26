@@ -2,9 +2,8 @@ FROM python:3.14-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# AWS Lambda Web Adapter: allows the uvicorn app to run on AWS Lambda; inert everywhere else.
-ADD https://github.com/aws/aws-lambda-web-adapter/releases/download/v0.8.4/lambda-adapter-x86_64 /opt/extensions/lambda-adapter
-RUN chmod +x /opt/extensions/lambda-adapter 2>/dev/null || true
+# Lets the unchanged uvicorn app run on AWS Lambda; inert everywhere else.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

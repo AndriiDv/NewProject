@@ -294,7 +294,7 @@ Resources:
       Target: !Sub integrations/${HttpApiIntegration}
 
   # Protected default route for all other endpoints (secured by Cognito JWT Authorizer)
-  DefaultRoute:
+  ApiDefaultRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi

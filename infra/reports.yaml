@@ -169,10 +169,10 @@ Resources:
       Role: !GetAtt ReportBuilderFunctionRole.Arn
       Timeout: 60
       MemorySize: 512
-      VpcConfig:
-        SubnetIds: !Ref SubnetIds
-        SecurityGroupIds:
-          - !Ref SecurityGroupId
+      # VpcConfig is omitted because Aurora Serverless v2 was provisioned with Express Configuration
+      # (InternetAccessGatewayEnabled: true, VPCNetworkingEnabled: false). Without a NAT Gateway in the VPC,
+      # Lambda inside the VPC cannot reach the public database endpoint (13.61.253.80:5432). Running without
+      # VpcConfig allows direct SSL + IAM connectivity to the database, matching new-project-backend.
       Environment:
         Variables:
           DATABASE_URL: !Sub "postgresql+asyncpg://${DBUser}@${DatabaseEndpoint}:5432/postgres"

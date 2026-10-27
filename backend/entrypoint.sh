@@ -1,6 +1,11 @@
 #!/usr/bin/env sh
 set -e
 
+if [ "$1" = "app.reports.builder_handler.handler" ] || [ -n "$REPORT_BUILDER" ]; then
+    HANDLER="${1:-app.reports.builder_handler.handler}"
+    exec /opt/venv/bin/python -m app.reports.runner "$HANDLER"
+fi
+
 if [ -n "$DATABASE_URL" ]; then
   python - <<'EOF'
 import os, time, socket, urllib.parse
@@ -23,10 +28,6 @@ for _ in range(60):
 EOF
 fi
 
-if [ "$1" = "app.reports.builder_handler.handler" ] || [ -n "$REPORT_BUILDER" ]; then
-    HANDLER="${1:-app.reports.builder_handler.handler}"
-    exec /opt/venv/bin/python -m app.reports.runner "$HANDLER"
-fi
-
 alembic upgrade head
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+

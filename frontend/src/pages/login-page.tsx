@@ -78,6 +78,11 @@ export function LoginPage() {
           <AlertDescription>{state.notice}</AlertDescription>
         </Alert>
       )}
+      {form.formState.errors.root && (
+        <Alert variant="destructive">
+          <AlertDescription>{form.formState.errors.root.message}</AlertDescription>
+        </Alert>
+      )}
       <GoogleButton
         disabled={pending || !authConfigured}
         pending={googleLogin.isPending}

@@ -121,7 +121,8 @@ export async function loadUser(): Promise<User | null> {
 export async function getIdToken(): Promise<string | null> {
   if (!authConfigured) return null
   try {
-    return (await fetchAuthSession()).tokens?.idToken?.toString() ?? null
+    const session = await fetchAuthSession()
+    return session.tokens?.idToken?.toString() ?? session.tokens?.accessToken?.toString() ?? null
   } catch {
     return null
   }

@@ -37,6 +37,48 @@ Conditions:
   HasGoogle: !Not [!Equals [!Ref GoogleClientId, ""]]
 
 Resources:
+  # Pre-SignUp trigger: auto-confirms users and verifies emails for frictionless signup
+  PreSignUpFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: PROJECT_NAME
+          Value: !Ref ProjectName
+
+  PreSignUpFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-cognito-pre-signup
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt PreSignUpFunctionRole.Arn
+      Timeout: 10
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              event['response']['autoConfirmUser'] = True
+              event['response']['autoVerifyEmail'] = True
+              return event
+      Tags:
+        - Key: PROJECT_NAME
+          Value: !Ref ProjectName
+
+  PreSignUpPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref PreSignUpFunction
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*
+
   # Retained on delete and replace: deleting the pool deletes every account in it.
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -83,6 +125,8 @@ Resources:
         EmailMessage: "Your Meetings verification code is {####}"
       UserPoolTags:
         PROJECT_NAME: !Ref ProjectName
+      LambdaConfig:
+        PreSignUp: !GetAtt PreSignUpFunction.Arn
 
   # Hosted domain for the OAuth endpoints (needed for Google). Prefixes are global.
   UserPoolDomain:

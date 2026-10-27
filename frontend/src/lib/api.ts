@@ -44,7 +44,8 @@ export class ApiError extends Error {
 
 // Backend origin, set at build time for AWS (the Lambda function URL). Empty locally,
 // where the Vite dev server or nginx proxies /api to the backend.
-const API_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
+const rawUrl = (import.meta.env.VITE_API_URL ?? '').trim().replace(/\/+$/, '')
+const API_URL = rawUrl.endsWith('/api') ? rawUrl.slice(0, -4) : rawUrl
 
 type ValidationIssue = { loc?: (string | number)[]; msg: string }
 

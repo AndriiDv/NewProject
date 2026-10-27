@@ -180,6 +180,23 @@ Resources:
       RouteKey: "GET /api/openapi.json"
       Target: !Sub integrations/${HttpApiIntegration}
 
+  # Public routes: CORS preflight for all endpoints (must NOT require JWT auth)
+  OptionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "OPTIONS /{proxy+}"
+      AuthorizationType: NONE
+      Target: !Sub integrations/${HttpApiIntegration}
+
+  OptionsRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "OPTIONS /"
+      AuthorizationType: NONE
+      Target: !Sub integrations/${HttpApiIntegration}
+
   # Protected default route for all other endpoints (secured by Cognito JWT Authorizer)
   ApiDefaultRoute:
     Type: AWS::ApiGatewayV2::Route

@@ -164,7 +164,8 @@ export function SignupPage() {
               disabled={confirmPending}
               onClick={() => {
                 resendCode.mutate(confirmingEmail, {
-                  onSuccess: () => setNotice('A new verification code has been sent to your email.'),
+                  onSuccess: () =>
+                    setNotice('A new verification code has been sent to your email.'),
                   onError: (err) => confirmForm.setError('root', { message: err.message }),
                 })
               }}

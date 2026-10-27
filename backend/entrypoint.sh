@@ -25,7 +25,7 @@ fi
 
 if [ "$1" = "app.reports.builder_handler.handler" ] || [ -n "$REPORT_BUILDER" ]; then
     HANDLER="${1:-app.reports.builder_handler.handler}"
-    exec python -m app.reports.runner "$HANDLER"
+    exec /opt/venv/bin/python -m app.reports.runner "$HANDLER"
 fi
 
 alembic upgrade head

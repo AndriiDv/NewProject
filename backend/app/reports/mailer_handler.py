@@ -1,54 +1,55 @@
 import email.message
 import logging
 import os
+import sys
 import urllib.parse
 from typing import Any
 
 import boto3
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s %(extra_fields)s",
-)
 
+class ExtraFormatter(logging.Formatter):
+    EXCLUDE = {
+        "name",
+        "msg",
+        "args",
+        "levelname",
+        "levelno",
+        "pathname",
+        "filename",
+        "module",
+        "exc_info",
+        "exc_text",
+        "stack_info",
+        "lineno",
+        "funcName",
+        "created",
+        "msecs",
+        "relativeCreated",
+        "thread",
+        "threadName",
+        "processName",
+        "process",
+        "message",
+        "taskName",
+        "extra_fields",
+        "asctime",
+    }
 
-class ExtraFieldsFilter(logging.Filter):
-    def filter(self, record):
-        extras = {
-            k: v
-            for k, v in record.__dict__.items()
-            if k
-            not in {
-                "name",
-                "msg",
-                "args",
-                "levelname",
-                "levelno",
-                "pathname",
-                "filename",
-                "module",
-                "exc_info",
-                "exc_text",
-                "stack_info",
-                "lineno",
-                "funcName",
-                "created",
-                "msecs",
-                "relativeCreated",
-                "thread",
-                "threadName",
-                "processName",
-                "process",
-                "message",
-                "extra_fields",
-            }
-        }
-        record.extra_fields = " ".join(f"{k}={v}" for k, v in extras.items()) if extras else ""
-        return True
+    def format(self, record: logging.LogRecord) -> str:
+        base = super().format(record)
+        extras = {k: v for k, v in record.__dict__.items() if k not in self.EXCLUDE}
+        if extras:
+            return f"{base} " + " ".join(f"{k}={v}" for k, v in extras.items())
+        return base
 
 
 logger = logging.getLogger("report-mailer")
-logger.addFilter(ExtraFieldsFilter())
+logger.setLevel(logging.INFO)
+logger.propagate = False
+_log_handler = logging.StreamHandler(sys.stdout)
+_log_handler.setFormatter(ExtraFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logger.addHandler(_log_handler)
 
 
 def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:

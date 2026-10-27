@@ -7,7 +7,7 @@ s ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help env build up down restart logs ps migrate migration seed psql test lint format \
-	dev-backend dev-frontend install clean deploy deploy-auth deploy-backend deploy-frontend destroy-auth destroy-backend destroy-frontend add-domain remove-domain infra-lint
+	dev-backend dev-frontend install clean deploy deploy-auth deploy-backend deploy-frontend deploy-reports report-now destroy-auth destroy-backend destroy-frontend add-domain remove-domain infra-lint
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(firstword $(MAKEFILE_LIST)) | \
@@ -82,7 +82,7 @@ AWS_ENV := AWS_ACCESS_KEY_ID="$(AWS_ACCESS_KEY_ID)" AWS_SECRET_ACCESS_KEY="$(AWS
 	GOOGLE_CLIENT_ID="$(GOOGLE_CLIENT_ID)" GOOGLE_CLIENT_SECRET="$(GOOGLE_CLIENT_SECRET)" \
 	COGNITO_DOMAIN_PREFIX="$(COGNITO_DOMAIN_PREFIX)"
 
-deploy: deploy-auth deploy-backend deploy-frontend ## Deploy the whole app to AWS
+deploy: deploy-auth deploy-backend deploy-frontend deploy-reports ## Deploy the whole app to AWS
 
 deploy-auth: env ## Deploy Cognito (user pool + app client), print its settings and write them to .env
 	@$(AWS_ENV) ./infra/deploy-auth.sh
@@ -92,6 +92,12 @@ deploy-backend: env ## Deploy backend (Lambda + API Gateway + Aurora) to AWS, se
 
 deploy-frontend: env ## Deploy frontend to S3 + CloudFront, wired to the API URL (after deploy-backend)
 	@$(AWS_ENV) ./infra/deploy-frontend.sh
+
+deploy-reports: env ## Deploy weekly reports pipeline (EventBridge + SQS + Builder + Mailer + S3) to AWS
+	@$(AWS_ENV) ./infra/deploy-reports.sh
+
+report-now: env ## Trigger weekly report generation: make report-now [WEEK=2026-W43]
+	@$(AWS_ENV) ./infra/report-now.sh $(WEEK)
 
 add-domain: env ## Attach DOMAIN_NAME from .env to the deployed frontend
 	@$(AWS_ENV) ./infra/add-domain.sh

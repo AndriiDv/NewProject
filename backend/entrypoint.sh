@@ -23,5 +23,10 @@ for _ in range(60):
 EOF
 fi
 
+if [ "$1" = "app.reports.builder_handler.handler" ] || [ -n "$REPORT_BUILDER" ]; then
+    HANDLER="${1:-app.reports.builder_handler.handler}"
+    exec python -m app.reports.runner "$HANDLER"
+fi
+
 alembic upgrade head
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000

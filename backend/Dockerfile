@@ -2,8 +2,10 @@ FROM python:3.14-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Lets the unchanged uvicorn app run on AWS Lambda; inert everywhere else.
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
+# Copy lambda-adapter binary and wrapper script for web vs event-driven handlers
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/lambda-adapter-bin
+COPY lambda-adapter-wrapper.sh /opt/extensions/lambda-adapter
+RUN chmod +x /opt/extensions/lambda-adapter /opt/lambda-adapter-bin
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -20,4 +22,5 @@ COPY . .
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
-CMD ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["uvicorn"]

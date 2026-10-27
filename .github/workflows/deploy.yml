@@ -153,6 +153,7 @@ jobs:
     outputs:
       api_url: ${{ steps.backend.outputs.api_url }}
       api_base_url: ${{ steps.backend.outputs.api_base_url }}
+      image_uri: ${{ steps.image.outputs.image_uri }}
     steps:
       - uses: actions/checkout@v5
 
@@ -174,6 +175,7 @@ jobs:
           aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws || true
 
       - name: Build and Push Docker Image
+        id: image
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           REPOSITORY: ${{ env.PROJECT_NAME }}-backend
@@ -186,6 +188,7 @@ jobs:
             docker build --provenance=false --platform linux/amd64 -t $REGISTRY/$REPOSITORY:$IMAGE_TAG backend
             docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
           fi
+          echo "image_uri=$REGISTRY/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Deploy Backend Stack
         id: backend
@@ -370,3 +373,26 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id "$DIST_ID" \
             --paths "/*"
+
+  deploy-reports:
+    name: Deploy Reports Pipeline
+    needs: [deploy-backend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Deploy Reports Stack
+        env:
+          IMAGE_URI: ${{ needs.deploy-backend.outputs.image_uri }}
+        run: |
+          chmod +x ./infra/*.sh
+          ./infra/deploy-reports.sh

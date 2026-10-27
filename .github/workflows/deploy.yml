@@ -180,8 +180,12 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           BUILDX_NO_DEFAULT_ATTESTATIONS: 1
         run: |
-          docker build --provenance=false --platform linux/amd64 -t $REGISTRY/$REPOSITORY:$IMAGE_TAG backend
-          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          if aws ecr describe-images --repository-name "$REPOSITORY" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+            echo "Image $REPOSITORY:$IMAGE_TAG already exists in ECR, skipping push."
+          else
+            docker build --provenance=false --platform linux/amd64 -t $REGISTRY/$REPOSITORY:$IMAGE_TAG backend
+            docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          fi
 
       - name: Deploy Backend Stack
         id: backend

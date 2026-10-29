@@ -1,4 +1,14 @@
 # Shared setup for the infra scripts: credentials and settings come from .env via make or environment.
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+elif [ -f ../.env ]; then
+  set -a
+  source ../.env
+  set +a
+fi
+
 AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-eu-north-1}}"
 export AWS_DEFAULT_REGION="$AWS_REGION" AWS_PAGER=""
 [ -n "${AWS_SESSION_TOKEN:-}" ] || unset AWS_SESSION_TOKEN

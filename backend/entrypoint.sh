@@ -6,6 +6,11 @@ if [ "$1" = "app.reports.builder_handler.handler" ] || [ -n "$REPORT_BUILDER" ];
     exec /opt/venv/bin/python -m app.reports.runner "$HANDLER"
 fi
 
+if [ "$1" = "app.ai.agenda_lambda.handler" ] || [ -n "$AGENDA_PARSER" ]; then
+    HANDLER="${1:-app.ai.agenda_lambda.handler}"
+    exec /opt/venv/bin/python -m app.reports.runner "$HANDLER"
+fi
+
 if [ -n "$DATABASE_URL" ]; then
   python - <<'EOF'
 import os, time, socket, urllib.parse

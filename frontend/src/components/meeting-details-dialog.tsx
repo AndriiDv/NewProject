@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { ClockIcon, MapPinIcon, PencilIcon, Trash2Icon, UsersIcon } from 'lucide-react'
 
+import { AgendaSection } from '@/components/agenda-section'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -101,6 +102,9 @@ export function MeetingDetailsDialog({ meeting, open, onOpenChange, onEdit, onDe
                   </ul>
                 )}
               </div>
+
+              <div className="hairline" />
+              <AgendaSection meeting={meeting} />
             </div>
 
             <DialogFooter className="sm:justify-between">

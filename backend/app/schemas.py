@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from pydantic import (
@@ -75,5 +75,43 @@ class MeetingRead(BaseModel):
     created_at: datetime
 
     @field_serializer("starts_at", "ends_at", "created_at")
+    def to_utc(self, value: datetime) -> str:
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+class AgendaItemSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    topic: str
+    owner: str | None = None
+    minutes: int | None = None
+
+
+class ActionItemSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    task: str
+    owner: str | None = None
+    due: date | None = None
+
+
+class AgendaCreate(BaseModel):
+    items: list[AgendaItemSchema] = []
+    action_items: list[ActionItemSchema] = []
+    ai_suggestion: dict | None = None
+
+
+class AgendaRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    meeting_id: uuid.UUID
+    items: list[AgendaItemSchema]
+    action_items: list[ActionItemSchema]
+    ai_suggestion: dict | None
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("created_at", "updated_at")
     def to_utc(self, value: datetime) -> str:
         return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

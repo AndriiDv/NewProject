@@ -2,7 +2,7 @@
 # Lambda adapter wrapper: if DISABLE_LWA is true or REPORT_BUILDER is set,
 # register with the Lambda Extension API for SHUTDOWN and sleep,
 # allowing the runtime (app.reports.runner) to execute without web adapter interference.
-if [ "$DISABLE_LWA" = "true" ] || [ -n "$REPORT_BUILDER" ]; then
+if [ "$DISABLE_LWA" = "true" ] || [ -n "$REPORT_BUILDER" ] || [ -n "$AGENDA_PARSER" ]; then
     if [ -n "$AWS_LAMBDA_RUNTIME_API" ]; then
         exec /opt/venv/bin/python -c '
 import os, sys, urllib.request, json

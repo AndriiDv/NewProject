@@ -18,9 +18,11 @@ main() {
   client_id="$(output "$AUTH_STACK" UserPoolClientId 2>/dev/null || true)"
   cognito_domain="$(output "$AUTH_STACK" Domain 2>/dev/null || true)"
   google_enabled="$(output "$AUTH_STACK" GoogleEnabled 2>/dev/null || true)"
+  agenda_parser_url="$(output "$PROJECT_NAME-ai" FunctionUrl 2>/dev/null || true)"
 
   (cd frontend && npm ci && \
     VITE_API_URL="$api_base_url" \
+    VITE_AGENDA_PARSER_URL="${agenda_parser_url:-}" \
     COGNITO_USER_POOL_ID="${user_pool_id:-}" \
     COGNITO_CLIENT_ID="${client_id:-}" \
     COGNITO_DOMAIN="${cognito_domain:-}" \

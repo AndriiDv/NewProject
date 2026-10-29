@@ -7,8 +7,8 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import CurrentUser
 from app.db import SessionDep
-from app.models import Meeting, Participant, User
-from app.schemas import MeetingCreate, MeetingRead
+from app.models import Agenda, Meeting, Participant, User
+from app.schemas import AgendaCreate, AgendaRead, MeetingCreate, MeetingRead
 
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
@@ -98,3 +98,41 @@ async def delete_meeting(meeting_id: uuid.UUID, session: SessionDep, user: Curre
     await session.delete(meeting)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{meeting_id}/agenda", response_model=AgendaRead)
+async def get_meeting_agenda(
+    meeting_id: uuid.UUID, session: SessionDep, user: CurrentUser
+) -> Agenda:
+    await _get_meeting(session, meeting_id, user)
+    agenda = await session.scalar(select(Agenda).where(Agenda.meeting_id == meeting_id))
+    if agenda is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Agenda not found for this meeting")
+    return agenda
+
+
+@router.post("/{meeting_id}/agenda", response_model=AgendaRead, status_code=status.HTTP_201_CREATED)
+async def save_meeting_agenda(
+    meeting_id: uuid.UUID, payload: AgendaCreate, session: SessionDep, user: CurrentUser
+) -> Agenda:
+    await _get_meeting(session, meeting_id, user)
+    agenda = await session.scalar(select(Agenda).where(Agenda.meeting_id == meeting_id))
+    items_data = [item.model_dump(mode="json") for item in payload.items]
+    action_items_data = [item.model_dump(mode="json") for item in payload.action_items]
+
+    if agenda is None:
+        agenda = Agenda(
+            meeting_id=meeting_id,
+            items=items_data,
+            action_items=action_items_data,
+            ai_suggestion=payload.ai_suggestion,
+        )
+        session.add(agenda)
+    else:
+        agenda.items = items_data
+        agenda.action_items = action_items_data
+        agenda.ai_suggestion = payload.ai_suggestion
+
+    await session.commit()
+    await session.refresh(agenda)
+    return agenda

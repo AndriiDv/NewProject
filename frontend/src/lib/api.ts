@@ -33,6 +33,55 @@ export type ParticipantCreate = {
   email: string
 }
 
+export type AgendaItem = {
+  topic: string
+  owner?: string | null
+  minutes?: number | null
+}
+
+export type ActionItem = {
+  task: string
+  owner?: string | null
+  due?: string | null
+}
+
+export type ParsedAgenda = {
+  title?: string | null
+  starts_at?: string | null
+  duration_minutes?: number | null
+  items: AgendaItem[]
+  action_items: ActionItem[]
+  language?: string
+}
+
+export type ParseAgendaResponse = {
+  agenda: ParsedAgenda
+  metadata: {
+    model: string
+    prompt_version: string
+    input_tokens: number
+    output_tokens: number
+    latency_ms: number
+    cost_usd: number
+  }
+}
+
+export type Agenda = {
+  id: string
+  meeting_id: string
+  items: AgendaItem[]
+  action_items: ActionItem[]
+  ai_suggestion?: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export type AgendaCreate = {
+  items: AgendaItem[]
+  action_items: ActionItem[]
+  ai_suggestion?: Record<string, unknown> | null
+}
+
 export class ApiError extends Error {
   readonly status: number
 
@@ -102,4 +151,57 @@ export const api = {
   listParticipants: () => request<Participant[]>('/participants'),
   createParticipant: (data: ParticipantCreate) =>
     request<Participant>('/participants', { method: 'POST', body: JSON.stringify(data) }),
+  getAgenda: (meetingId: string) => request<Agenda>(`/meetings/${meetingId}/agenda`),
+  saveAgenda: (meetingId: string, data: AgendaCreate) =>
+    request<Agenda>(`/meetings/${meetingId}/agenda`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  parseAgenda: async (
+    text: string,
+    today?: string,
+    tz?: string,
+    signal?: AbortSignal,
+  ): Promise<ParseAgendaResponse> => {
+    const token = await getIdToken()
+    const parserUrl = (import.meta.env.VITE_AGENDA_PARSER_URL ?? '').trim().replace(/\/+$/, '')
+    const targetUrl = parserUrl || `${API_URL}/api/agenda/parse`
+
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify({
+        text,
+        today: today || new Date().toISOString().split('T')[0],
+        tz: tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      }),
+      signal,
+    })
+
+    if (response.status === 401) await signOut().catch(() => undefined)
+
+    if (!response.ok) {
+      let detail: unknown
+      try {
+        detail = (await response.json()).detail
+      } catch {
+        // non-JSON response body
+      }
+      if (response.status === 413) {
+        throw new ApiError(413, 'Agenda text is too long (maximum 10,000 characters allowed).')
+      }
+      if (response.status === 429) {
+        throw new ApiError(
+          429,
+          'AI service is currently busy (rate limit exceeded). Please try again shortly.',
+        )
+      }
+      throw new ApiError(response.status, errorMessage(detail, response.statusText))
+    }
+
+    return response.json() as Promise<ParseAgendaResponse>
+  },
 }

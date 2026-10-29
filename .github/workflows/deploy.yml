@@ -262,9 +262,44 @@ jobs:
             exit 1
           fi
 
+  deploy-ai:
+    name: Deploy AI Agenda Parser
+    needs: [deploy-auth, deploy-backend]
+    runs-on: ubuntu-latest
+    outputs:
+      function_url: ${{ steps.ai.outputs.function_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Deploy AI Stack
+        id: ai
+        env:
+          IMAGE_URI: ${{ needs.deploy-backend.outputs.image_uri }}
+          COGNITO_USER_POOL_ID: ${{ needs.deploy-auth.outputs.user_pool_id }}
+          COGNITO_CLIENT_ID: ${{ needs.deploy-auth.outputs.client_id }}
+          BEDROCK_REGION: us-east-1
+          PARSER_MODEL: us.anthropic.claude-haiku-4-5-20251001-v1:0
+        run: |
+          chmod +x ./infra/*.sh
+          ./infra/deploy-ai.sh
+          FUNC_URL=$(aws cloudformation describe-stacks \
+            --stack-name ${{ env.PROJECT_NAME }}-ai \
+            --query "Stacks[0].Outputs[?OutputKey=='FunctionUrl'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+          echo "function_url=$FUNC_URL" >> $GITHUB_OUTPUT
+
   deploy-frontend:
     name: Build & Deploy Frontend (S3 + CloudFront)
-    needs: [deploy-auth, deploy-backend]
+    needs: [deploy-auth, deploy-backend, deploy-ai]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -337,8 +372,16 @@ jobs:
               --query "Stacks[0].Outputs[?OutputKey=='GoogleEnabled'].OutputValue" \
               --output text 2>/dev/null || echo "false")
           fi
+          PARSER_URL="${{ needs.deploy-ai.outputs.function_url }}"
+          if [ -z "$PARSER_URL" ]; then
+            PARSER_URL=$(aws cloudformation describe-stacks \
+              --stack-name ${{ env.PROJECT_NAME }}-ai \
+              --query "Stacks[0].Outputs[?OutputKey=='FunctionUrl'].OutputValue" \
+              --output text 2>/dev/null || echo "")
+          fi
           npm ci
           VITE_API_URL="$API_BASE" \
+          VITE_AGENDA_PARSER_URL="$PARSER_URL" \
           COGNITO_USER_POOL_ID="$POOL_ID" \
           COGNITO_CLIENT_ID="$CLIENT_ID" \
           COGNITO_DOMAIN="$DOMAIN" \

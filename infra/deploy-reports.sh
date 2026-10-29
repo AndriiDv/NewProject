@@ -24,15 +24,21 @@ main() {
   if [ -z "$image" ] && stack_exists "$BACKEND_STACK"; then
     func_name="$(output "$BACKEND_STACK" FunctionName)"
     if [ -n "$func_name" ] && [ "$func_name" != "None" ]; then
-      image="$(aws lambda get-function-configuration --function-name "$func_name" --region "$AWS_REGION" --query "Code.ImageUri" --output text 2>/dev/null || echo "")"
+      image="$(aws lambda get-function --function-name "$func_name" --region "$AWS_REGION" --query "Code.ImageUri" --output text 2>/dev/null || echo "")"
     fi
   fi
 
-  # Fallback to current ECR image
+  # Fallback to latest tag in ECR or current git HEAD
   if [ -z "$image" ] || [ "$image" = "None" ]; then
     repository="$(output "$ECR_STACK" RepositoryUri)"
-    tag="$(git rev-parse --short HEAD)"
-    image="$repository:$tag"
+    latest_tag="$(aws ecr describe-images --repository-name "$PROJECT_NAME-backend" --region "$AWS_REGION" \
+      --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' --output text 2>/dev/null || echo "")"
+    if [ -n "$latest_tag" ] && [ "$latest_tag" != "None" ]; then
+      image="$repository:$latest_tag"
+    else
+      tag="$(git rev-parse HEAD)"
+      image="$repository:$tag"
+    fi
   fi
 
   # 3. Database Endpoint

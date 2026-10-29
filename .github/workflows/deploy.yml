@@ -120,8 +120,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::522400670358:role/GitHubActionsRole-NewProject
+          aws-region: eu-north-1
 
       - name: Deploy Auth Stack
         id: auth
@@ -163,8 +163,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::522400670358:role/GitHubActionsRole-NewProject
+          aws-region: eu-north-1
 
       - name: Log in to Amazon ECR
         id: login-ecr
@@ -277,8 +277,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::522400670358:role/GitHubActionsRole-NewProject
+          aws-region: eu-north-1
 
       - name: Deploy AI Stack
         id: ai
@@ -310,8 +310,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::522400670358:role/GitHubActionsRole-NewProject
+          aws-region: eu-north-1
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -430,8 +430,8 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::522400670358:role/GitHubActionsRole-NewProject
+          aws-region: eu-north-1
 
       - name: Deploy Reports Stack
         env:

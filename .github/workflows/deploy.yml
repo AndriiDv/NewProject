@@ -105,6 +105,9 @@ jobs:
     name: Deploy Cognito Auth
     needs: [backend-lint, frontend-lint, backend-test]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       user_pool_id: ${{ steps.auth.outputs.user_pool_id }}
       client_id: ${{ steps.auth.outputs.client_id }}
@@ -150,6 +153,9 @@ jobs:
     name: Build & Deploy Backend (Serverless Lambda + API Gateway)
     needs: [deploy-auth]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       api_url: ${{ steps.backend.outputs.api_url }}
       api_base_url: ${{ steps.backend.outputs.api_base_url }}
@@ -266,6 +272,9 @@ jobs:
     name: Deploy AI Agenda Parser
     needs: [deploy-auth, deploy-backend]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       function_url: ${{ steps.ai.outputs.function_url }}
     steps:
@@ -301,6 +310,9 @@ jobs:
     name: Build & Deploy Frontend (S3 + CloudFront)
     needs: [deploy-auth, deploy-backend, deploy-ai]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
@@ -421,6 +433,9 @@ jobs:
     name: Deploy Reports Pipeline
     needs: [deploy-backend]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v5
 

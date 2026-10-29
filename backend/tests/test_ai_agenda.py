@@ -206,9 +206,10 @@ def test_agenda_lambda_handler_options_preflight():
     }
     resp = handler(event)
     assert resp["statusCode"] == 200
+    assert resp.get("body") == ""
+    # CORS headers are handled natively by AWS Lambda Function URL; handler returns clean response
     headers = {k.lower(): v for k, v in resp["headers"].items()}
-    assert headers["access-control-allow-origin"] == "*"
-    assert "POST, OPTIONS" in headers["access-control-allow-methods"]
+    assert "access-control-allow-origin" not in headers
 
 
 def test_agenda_lambda_handler_payload_too_large():

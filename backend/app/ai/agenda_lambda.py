@@ -102,18 +102,16 @@ def verify_cognito_token(token: str, user_pool_id: str, client_id: str) -> dict[
         raise AuthError(f"Invalid token: {e}") from e
 
 
-def _cors_headers() -> dict[str, str]:
+def _default_headers() -> dict[str, str]:
+    """Default response headers. CORS headers are handled natively by Lambda Function URL."""
     return {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "authorization, content-type, x-requested-with",
     }
 
 
 def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     """Lambda entry point for agenda parsing via Function URL or direct invocation."""
-    cors = _cors_headers()
+    response_headers = _default_headers()
 
     # 1. Handle HTTP Method / Request context
     http_method = (
@@ -125,7 +123,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     if http_method == "OPTIONS":
         return {
             "statusCode": 200,
-            "headers": cors,
+            "headers": response_headers,
             "body": "",
         }
 
@@ -143,7 +141,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     if not auth_header:
         return {
             "statusCode": 401,
-            "headers": cors,
+            "headers": response_headers,
             "body": json.dumps({"detail": "Authorization header is required"}),
         }
 
@@ -153,7 +151,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     except AuthError as auth_err:
         return {
             "statusCode": auth_err.status_code,
-            "headers": cors,
+            "headers": response_headers,
             "body": json.dumps({"detail": str(auth_err)}),
         }
 
@@ -166,7 +164,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
             except Exception:
                 return {
                     "statusCode": 400,
-                    "headers": cors,
+                    "headers": response_headers,
                     "body": json.dumps({"detail": "Invalid JSON body"}),
                 }
         elif isinstance(body_raw, dict):
@@ -181,7 +179,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     if not isinstance(text, str) or not text.strip():
         return {
             "statusCode": 400,
-            "headers": cors,
+            "headers": response_headers,
             "body": json.dumps({"detail": "Field 'text' is required and must not be empty"}),
         }
 
@@ -189,7 +187,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     if len(text) > 10000:
         return {
             "statusCode": 413,
-            "headers": cors,
+            "headers": response_headers,
             "body": json.dumps(
                 {
                     "detail": (
@@ -240,7 +238,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
 
         return {
             "statusCode": 200,
-            "headers": cors,
+            "headers": response_headers,
             "body": json.dumps(res_payload, ensure_ascii=False),
         }
     except Exception as exc:
@@ -248,7 +246,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
         status_code = 429 if "Throttling" in type(exc).__name__ or "Throttling" in str(exc) else 500
         return {
             "statusCode": status_code,
-            "headers": cors,
+            "headers": response_headers,
             "body": json.dumps({"detail": f"Agenda parsing error: {exc}"}),
         }
 

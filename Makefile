@@ -7,7 +7,9 @@ s ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help env build up down restart logs ps migrate migration seed psql test lint format \
-	dev-backend dev-frontend install clean deploy deploy-auth deploy-backend deploy-frontend deploy-reports deploy-ai report-now parse destroy-auth destroy-backend destroy-frontend destroy-ai add-domain remove-domain infra-lint
+	dev-backend dev-frontend install clean deploy infra-init infra-fmt infra-validate infra-plan infra-output \
+	deploy-auth deploy-backend deploy-frontend deploy-reports deploy-ai report-now parse \
+	destroy-auth destroy-backend destroy-frontend destroy-ai add-domain remove-domain infra-lint
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(firstword $(MAKEFILE_LIST)) | \
@@ -82,10 +84,24 @@ AWS_ENV := AWS_ACCESS_KEY_ID="$(AWS_ACCESS_KEY_ID)" AWS_SECRET_ACCESS_KEY="$(AWS
 	GOOGLE_CLIENT_ID="$(GOOGLE_CLIENT_ID)" GOOGLE_CLIENT_SECRET="$(GOOGLE_CLIENT_SECRET)" \
 	COGNITO_DOMAIN_PREFIX="$(COGNITO_DOMAIN_PREFIX)"
 
-deploy: deploy-auth deploy-backend deploy-frontend deploy-reports deploy-ai ## Deploy the whole app to AWS
+infra-init: ## Initialize Terraform backend and providers
+	cd infra && terraform init
 
-deploy-auth: env ## Deploy Cognito (user pool + app client), print its settings and write them to .env
-	@$(AWS_ENV) ./infra/deploy-auth.sh
+infra-fmt: ## Format Terraform configurations
+	cd infra && terraform fmt
+
+infra-validate: ## Validate Terraform syntax and configurations
+	cd infra && terraform validate
+
+infra-plan: env ## Plan infrastructure changes with Terraform
+	cd infra && terraform plan
+
+infra-output: ## Display all Terraform outputs
+	cd infra && terraform output
+
+deploy: infra-plan deploy-backend deploy-frontend ## Deploy infrastructure plan, backend, and frontend
+
+deploy-auth: infra-plan ## (Migrated to Terraform) Run infra-plan for Auth stack
 
 deploy-backend: env ## Deploy backend (Lambda + API Gateway + Aurora) to AWS, see infra/
 	@$(AWS_ENV) ./infra/deploy-backend.sh
@@ -93,18 +109,16 @@ deploy-backend: env ## Deploy backend (Lambda + API Gateway + Aurora) to AWS, se
 deploy-frontend: env ## Deploy frontend to S3 + CloudFront, wired to the API URL (after deploy-backend)
 	@$(AWS_ENV) ./infra/deploy-frontend.sh
 
-deploy-reports: env ## Deploy weekly reports pipeline (EventBridge + SQS + Builder + Mailer + S3) to AWS
-	@$(AWS_ENV) ./infra/deploy-reports.sh
+deploy-reports: infra-plan ## (Migrated to Terraform) Run infra-plan for Reports stack
 
-deploy-ai: env ## Deploy AI agenda parser Lambda with Function URL outside VPC
-	@$(AWS_ENV) ./infra/deploy-ai.sh
+deploy-ai: infra-plan ## (Migrated to Terraform) Run infra-plan for AI Agenda Parser stack
 
 parse: env ## Parse raw agenda text via Bedrock CLI: make parse TEXT="..."
 	@test -n "$(TEXT)" || (echo 'Usage: make parse TEXT="Sprint planning on Monday..."' && exit 1)
 	@$(AWS_ENV) cd backend && uv run python -m app.ai.agenda --text "$(TEXT)"
 
 report-now: env ## Trigger weekly report generation: make report-now [WEEK=2026-W43]
-	@$(AWS_ENV) ./infra/report-now.sh $(WEEK)
+	@$(AWS_ENV) QUEUE_URL="$$(cd infra && terraform output -raw report_requests_queue_url 2>/dev/null)" ./infra/report-now.sh $(WEEK)
 
 add-domain: env ## Attach DOMAIN_NAME from .env to the deployed frontend
 	@$(AWS_ENV) ./infra/add-domain.sh

@@ -11,7 +11,13 @@ main() {
   WEEK="${1:-${WEEK:-}}"
   QUEUE_NAME="$PROJECT_NAME-report-requests"
 
-  QUEUE_URL="$(aws sqs get-queue-url --queue-name "$QUEUE_NAME" --region "$AWS_REGION" --query QueueUrl --output text 2>/dev/null || echo "")"
+  QUEUE_URL="${QUEUE_URL:-}"
+  if [ -z "$QUEUE_URL" ] || [ "$QUEUE_URL" = "None" ]; then
+    QUEUE_URL="$(tf_output report_requests_queue_url 2>/dev/null || echo "")"
+  fi
+  if [ -z "$QUEUE_URL" ] || [ "$QUEUE_URL" = "None" ]; then
+    QUEUE_URL="$(aws sqs get-queue-url --queue-name "$QUEUE_NAME" --region "$AWS_REGION" --query QueueUrl --output text 2>/dev/null || echo "")"
+  fi
   if [ -z "$QUEUE_URL" ] || [ "$QUEUE_URL" = "None" ]; then
     REPORTS_STACK="$PROJECT_NAME-reports"
     QUEUE_URL="$(output "$REPORTS_STACK" ReportRequestsQueueUrl)"

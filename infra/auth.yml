@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Meetings app - Cognito user pool: sign-in with email and password (self sign-up, email
+  verification code), a public app client for the SPA, a Cognito domain for OAuth, and Google
+  as an identity provider that is created only when GoogleClientId is set.
+
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E3005]
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: meetings
+    AllowedPattern: "[a-z][a-z0-9-]*"
+  CognitoDomainPrefix:
+    Type: String
+    Default: andrii-dv
+    Description: Prefix for Cognito hosted domain (e.g. andrii-dv).
+  AppUrls:
+    Type: CommaDelimitedList
+    Default: http://localhost:5173,http://localhost:3000
+    Description: >-
+      Origins of the frontend (no trailing slash). OAuth (Google) redirects back to
+      <origin>/login. Kept up to date by the infra scripts.
+  GoogleClientId:
+    Type: String
+    Default: ""
+    Description: Google OAuth client id; leave empty to keep Google sign-in disabled.
+  GoogleClientSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+
+Conditions:
+  HasGoogle: !Not [!Equals [!Ref GoogleClientId, ""]]
+
+Resources:
+  # Pre-SignUp trigger: auto-confirms users and verifies emails for frictionless signup
+  PreSignUpFunctionRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: PROJECT_NAME
+          Value: !Ref ProjectName
+
+  PreSignUpFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Sub ${ProjectName}-cognito-pre-signup
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt PreSignUpFunctionRole.Arn
+      Timeout: 10
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              event['response']['autoConfirmUser'] = True
+              event['response']['autoVerifyEmail'] = True
+              return event
+      Tags:
+        - Key: PROJECT_NAME
+          Value: !Ref ProjectName
+
+  PreSignUpPermission:
+    Type: AWS::Lambda::Permission
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref PreSignUpFunction
+      Action: lambda:InvokeFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*
+
+  # Retained on delete and replace: deleting the pool deletes every account in it.
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub ${ProjectName}-users
+      # Users sign in with their email; Cognito emails a code to verify it.
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      # A new email (profile page) takes effect only after its code is entered; until then
+      # the user keeps signing in with, and recovering the password through, the old one.
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate: [email]
+      UsernameConfiguration:
+        CaseSensitive: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      # Mirrored by the signup form (frontend/src/pages/signup-page.tsx).
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireUppercase: false
+          RequireSymbols: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      # Cognito's own sender: no SES setup, limited to about 50 emails a day.
+      EmailConfiguration:
+        EmailSendingAccount: COGNITO_DEFAULT
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailSubject: Your Meetings verification code
+        EmailMessage: "Your Meetings verification code is {####}"
+      UserPoolTags:
+        PROJECT_NAME: !Ref ProjectName
+      LambdaConfig:
+        PreSignUp: !GetAtt PreSignUpFunction.Arn
+
+  # Hosted domain for the OAuth endpoints (needed for Google). Prefixes are global.
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref CognitoDomainPrefix
+
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Condition: HasGoogle
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: Google
+      ProviderType: Google
+      ProviderDetails:
+        client_id: !Ref GoogleClientId
+        client_secret: !Ref GoogleClientSecret
+        authorize_scopes: openid email profile
+      AttributeMapping:
+        email: email
+        name: name
+
+  # Public client (no secret): the SPA talks to Cognito directly with SRP.
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    DependsOn:
+      - GoogleIdentityProvider
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub ${ProjectName}-web
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      SupportedIdentityProviders: !If
+        - HasGoogle
+        - [COGNITO, Google]
+        - [COGNITO]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile, aws.cognito.signin.user.admin]
+      # "<origin>/login" for every origin: join with "/login," and append the last "/login".
+      CallbackURLs: !Split
+        - ","
+        - !Join ["", [!Join ["/login,", !Ref AppUrls], "/login"]]
+      LogoutURLs: !Split
+        - ","
+        - !Join ["", [!Join ["/login,", !Ref AppUrls], "/login"]]
+
+Outputs:
+  Region:
+    Value: !Ref AWS::Region
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  Domain:
+    Description: Cognito domain for OAuth redirects (Google)
+    Value: !Sub ${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com
+  Issuer:
+    Description: Issuer of the tokens; the backend checks it
+    Value: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+  GoogleEnabled:
+    Value: !If [HasGoogle, "true", "false"]

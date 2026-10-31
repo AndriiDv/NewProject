@@ -1,0 +1,12 @@
+project_name          = "new-project"
+region                = "eu-north-1"
+cognito_domain_prefix = "andrii-dv"
+app_urls              = ["http://localhost:5173", "http://localhost:3000"]
+sender_email          = "andriy.dvib@gmail.com"
+recipient_email       = "andriy.dvib@gmail.com"
+bedrock_region        = "us-east-1"
+parser_model          = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+database_endpoint     = "new-project-db.cluster-cxuqe02cwqxo.eu-north-1.rds.amazonaws.com"
+db_user               = "meetings"
+vpc_id                = "vpc-05e5cb6f6f94345d7"
+route_table_ids       = ["rtb-085fb0bfb2bc0c18a"]

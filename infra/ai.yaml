@@ -34,6 +34,8 @@ Parameters:
 Resources:
   AgendaParserRole:
     Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       RoleName: !Sub "${ProjectName}-agenda-parser-role"
       AssumeRolePolicyDocument:
@@ -61,6 +63,8 @@ Resources:
 
   AgendaParserFunction:
     Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !Sub "${ProjectName}-agenda-parser"
       Description: "Parses raw unstructured meeting text into structured JSON agenda schema via AWS Bedrock"
@@ -87,6 +91,8 @@ Resources:
 
   AgendaParserFunctionUrl:
     Type: AWS::Lambda::Url
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       AuthType: NONE
       TargetFunctionArn: !GetAtt AgendaParserFunction.Arn
@@ -102,6 +108,8 @@ Resources:
 
   AgendaParserUrlPermission:
     Type: AWS::Lambda::Permission
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       FunctionName: !GetAtt AgendaParserFunction.Arn
       Action: lambda:InvokeFunctionUrl

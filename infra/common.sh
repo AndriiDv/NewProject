@@ -29,10 +29,30 @@ CERT_REGION="us-east-1"
 TAG_KEY="PROJECT_NAME"
 STACK_TAGS=("$TAG_KEY=$PROJECT_NAME")
 
-# output STACK KEY [REGION]: prints one CloudFormation stack output (empty if absent).
+# tf_output KEY: prints a Terraform output value from infra/ (empty if absent).
+tf_output() {
+  (cd "$(dirname "${BASH_SOURCE[0]}")" && terraform output -raw "$1" 2>/dev/null || true)
+}
+
+# output STACK KEY [REGION]: prints one output from Terraform or CloudFormation (empty if absent).
 output() {
+  local tf_val=""
+  case "$2" in
+    UserPoolId) tf_val="$(tf_output user_pool_id)" ;;
+    UserPoolClientId) tf_val="$(tf_output client_id)" ;;
+    Domain) tf_val="$(tf_output domain)" ;;
+    Issuer) tf_val="$(tf_output issuer)" ;;
+    ReportsBucketName) tf_val="$(tf_output reports_bucket)" ;;
+    ReportRequestsQueueUrl) tf_val="$(tf_output report_requests_queue_url)" ;;
+    FunctionUrl) tf_val="$(tf_output agenda_parser_url)" ;;
+    *) tf_val="$(tf_output "$2")" ;;
+  esac
+  if [ -n "$tf_val" ] && [ "$tf_val" != "None" ]; then
+    echo "$tf_val"
+    return 0
+  fi
   aws cloudformation describe-stacks --stack-name "$1" --region "${3:-$AWS_REGION}" \
-    --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text
+    --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text 2>/dev/null || true
 }
 
 # stack_exists STACK [REGION]

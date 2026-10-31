@@ -63,7 +63,7 @@ resource "aws_lambda_function" "agenda_parser" {
   }
 
   lifecycle {
-    ignore_changes = [image_uri]
+    ignore_changes = [image_uri, publish]
   }
 }
 

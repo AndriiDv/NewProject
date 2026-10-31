@@ -19,7 +19,11 @@ variable "cognito_domain_prefix" {
 variable "app_urls" {
   description = "Frontend origins for OAuth redirects"
   type        = list(string)
-  default     = ["http://localhost:5173", "http://localhost:3000"]
+  default = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://d3iz6wtls1vf8b.cloudfront.net"
+  ]
 }
 
 variable "google_client_id" {

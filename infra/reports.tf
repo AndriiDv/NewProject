@@ -2,6 +2,10 @@
 resource "aws_sqs_queue" "report_requests_dlq" {
   name                      = "${var.project_name}-report-requests-dlq"
   message_retention_seconds = 1209600
+
+  lifecycle {
+    ignore_changes = [max_message_size]
+  }
 }
 
 resource "aws_sqs_queue" "report_requests" {
@@ -12,6 +16,10 @@ resource "aws_sqs_queue" "report_requests" {
     deadLetterTargetArn = aws_sqs_queue.report_requests_dlq.arn
     maxReceiveCount     = 3
   })
+
+  lifecycle {
+    ignore_changes = [max_message_size]
+  }
 }
 
 # ----------------------------------------------------------- EventBridge Schedule
@@ -64,6 +72,10 @@ resource "aws_scheduler_schedule" "weekly_report" {
     arn      = aws_sqs_queue.report_requests.arn
     role_arn = aws_iam_role.scheduler_role.arn
     input    = jsonencode({ week = null, source = "schedule" })
+  }
+
+  lifecycle {
+    ignore_changes = [target[0].input]
   }
 }
 
@@ -178,6 +190,7 @@ resource "aws_lambda_function" "report_builder" {
   lifecycle {
     ignore_changes = [
       image_uri,
+      publish,
       environment[0].variables["DB_PASSWORD"]
     ]
   }
@@ -354,7 +367,7 @@ resource "aws_lambda_function" "report_mailer" {
   }
 
   lifecycle {
-    ignore_changes = [filename, source_code_hash]
+    ignore_changes = [filename, source_code_hash, publish]
   }
 }
 
@@ -373,6 +386,7 @@ resource "aws_s3_bucket" "reports" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = [force_destroy]
   }
 }
 

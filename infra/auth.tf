@@ -49,7 +49,7 @@ resource "aws_lambda_function" "pre_sign_up" {
   source_code_hash = data.archive_file.pre_sign_up_zip.output_base64sha256
 
   lifecycle {
-    ignore_changes = [filename, source_code_hash]
+    ignore_changes = [filename, source_code_hash, publish]
   }
 }
 
@@ -121,6 +121,7 @@ resource "aws_cognito_user_pool" "main" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = [schema]
   }
 }
 
@@ -147,6 +148,10 @@ resource "aws_cognito_identity_provider" "google" {
     email    = "email"
     name     = "name"
     username = "sub"
+  }
+
+  lifecycle {
+    ignore_changes = [provider_details]
   }
 }
 
@@ -185,6 +190,10 @@ resource "aws_cognito_user_pool_client" "client" {
 
   callback_urls = [for url in var.app_urls : "${url}/login"]
   logout_urls   = [for url in var.app_urls : "${url}/login"]
+
+  lifecycle {
+    ignore_changes = [generate_secret]
+  }
 
   depends_on = [aws_cognito_identity_provider.google]
 }
